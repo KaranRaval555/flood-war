@@ -1,16 +1,19 @@
-#include "base.h"
 #include <raylib.h>
-#include <stdio.h>
+#include <stdbool.h>
 
 #define WIDTH 800
 #define HEIGHT 800
 #define COLORS 10
-#define MAX_MOVES 25
 #define CELLS 16
 #define CELL_SIZE (WIDTH / CELLS)
 
 Color board[CELLS][CELLS];
-int moves = 0;
+int playerRegion[CELLS][CELLS];
+
+typedef struct {
+  int id;
+  int origin;
+} Player;
 
 typedef enum {
   PLAYING,
@@ -19,6 +22,18 @@ typedef enum {
 } GameState;
 
 GameState state = PLAYING;
+
+Player p1 = {
+  .id = -1,
+  .origin = 0
+};
+
+Player p2 = {
+  .id = 1,
+  .origin = CELLS - 1
+};
+
+Player *player;
 
 Color colors[COLORS] = {
   {  248, 226, 185, 255}, // cream
@@ -33,22 +48,10 @@ Color colors[COLORS] = {
   { 80,  80, 120, 255}  // muted accent
 };
 
-int playerRegion[CELLS][CELLS];
-
-void print_board() {
+void reset_region(int val) {
   for (int i = 0; i < CELLS; i++) {
     for (int j = 0; j < CELLS; j++) {
-      printf("%d", playerRegion[i][j]); // simplified
-    }
-    printf("\n");
-  }
-  printf("------\n");
-}
-
-void reset_region() {
-  for (int i = 0; i < CELLS; i++) {
-    for (int j = 0; j < CELLS; j++) {
-      playerRegion[i][j] = 0;
+      if(playerRegion[i][j] == val) playerRegion[i][j] = 0;
     }
   }
 }
@@ -58,10 +61,12 @@ void init_board() {
     for (int j = 0; j < CELLS; j++) {
       int n = GetRandomValue(0, 9);
       board[i][j] = colors[n];
+      board[i][j].a = 255;
+      playerRegion = 0;
     }
   }
-  reset_region();
-  playerRegion[0][0] = 1;
+  playerRegion[0][0] = -1;
+  playerRegion[CELLS - 1][CELLS - 1] = 1;
 }
 
 void display_board() {
@@ -72,23 +77,36 @@ void display_board() {
   }
 }
 
-void prefilled_region(Color new_color) {
+void prefilled_region(int val, Color new_color) {
   for (int i = 0; i < CELLS; i++) {
     for (int j = 0; j < CELLS; j++) {
-      if(playerRegion[i][j]){
+      if(playerRegion[i][j] == val){
         board[i][j] = new_color;
       } 
     }
   }
 }
 
+bool is_visited(int val) {
+  return val != 0;
+}
+
+bool InEnemyRegion(int row, int col) {
+  return playerRegion[row][col] == -player->id;
+}
+
+bool InFilledRegion(int row, int col) {
+  return InEnemyRegion(row, col) || playerRegion[row][col] == player->id;
+}
+
 void dfs(Color color, int row, int col) {
   if (row < 0 || row >= CELLS || col < 0 || col >= CELLS  // out of boundary
-      || playerRegion[row][col]                  // already visited
+      || is_visited(playerRegion[row][col])                  // already visited
       || !ColorIsEqual(board[row][col], color)   // cell doesn't have current color in area
+      || InEnemyRegion(row, col)
      ) return;
 
-  playerRegion[row][col] = 1;
+  playerRegion[row][col] = player->id;
 
   dfs(color, row - 1, col);
   dfs(color, row + 1, col);
@@ -97,19 +115,36 @@ void dfs(Color color, int row, int col) {
 }
 
 void fill_region(Color color) {
-  prefilled_region(color);
-  reset_region();
-  dfs(color, 0, 0);
+  prefilled_region(player->id, color);
+  reset_region(player->id);
+  dfs(color, player->origin, player->origin);
 }
 
 int count_cells() {
   int count = 0;
   for (int i = 0; i < CELLS; i++) {
     for (int j = 0; j < CELLS; j++) {
-      if(playerRegion[i][j]) count++;
+      if(playerRegion[i][j] == player->id) count++;
     }
   }
   return count;
+}
+
+void switch_player() {
+  player = player->id == -1 ? &p2 : &p1 ;
+}
+
+void blur() {
+  for (int i = 0; i < CELLS; i++) {
+    for (int j = 0; j < CELLS; j++) {
+      if(InEnemyRegion(i, j)) { 
+         board[i][j].a = 220;
+      }
+      else {
+         board[i][j].a = 255;
+      }
+    }
+  }
 }
 
 void player_move() {
@@ -117,9 +152,11 @@ void player_move() {
     Vector2 mousePos = GetMousePosition();
     int col = (int)mousePos.x / CELL_SIZE;
     int row = (int)mousePos.y / CELL_SIZE;
-    board[0][0] = board[row][col];
+    if(InFilledRegion(row, col)) return;
+    board[player->origin][player->origin] = board[row][col];
     fill_region(board[row][col]);
-    moves++;
+    switch_player();
+    blur();
   }
 }
 
@@ -128,29 +165,23 @@ void GameLoop() {
   const char* winTxt = "VICTORY!";
   const char* lossTxt = "GAME OVER!";
   const char* resetTxt = "Press [R] to Play Again";
-
   int fontSize = 80;
-  moves = 0;
-
   int textWidth1 = MeasureText(winTxt, fontSize);
   int textWidth2 = MeasureText(lossTxt, fontSize);
   int textWidth3 = MeasureText(resetTxt, 25);
 
+  Player *player = &p1;
   init_board();
 
   while(!WindowShouldClose()) {
     if(state == PLAYING) {
       player_move();
-      if(count_cells() >= (CELLS * CELLS) / 2){
+      if(count_cells() >= (((CELLS * CELLS) / 2) - 16)) {
         state = WIN;
-      }
-      else if (moves > MAX_MOVES) { 
-        state = LOSS;
       }
     }
     else {
       if(IsKeyPressed(KEY_R)) {
-        moves = 0;
         init_board();
         state = PLAYING;
       }
@@ -166,6 +197,7 @@ void GameLoop() {
       case WIN:
         ClearBackground(BLACK);
         DrawText(winTxt, WIDTH/2 - textWidth1/2, HEIGHT/2 - fontSize/2, fontSize, GREEN);
+        DrawText(TextFormat("%d",player->id), WIDTH/2 - textWidth1/2, HEIGHT/2 - fontSize/2, fontSize, GREEN);
         DrawText(resetTxt, WIDTH/2 - textWidth3/2, HEIGHT/2 + 50, 25, RAYWHITE);
         break;
       case LOSS:
