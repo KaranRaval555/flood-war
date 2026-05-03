@@ -17,8 +17,7 @@ typedef struct {
 
 typedef enum {
   PLAYING,
-  WIN,
-  LOSS
+  END,
 } GameState;
 
 GameState state = PLAYING;
@@ -62,7 +61,7 @@ void init_board() {
       int n = GetRandomValue(0, 9);
       board[i][j] = colors[n];
       board[i][j].a = 255;
-      playerRegion = 0;
+      playerRegion[i][j] = 0;
     }
   }
   playerRegion[0][0] = -1;
@@ -147,73 +146,58 @@ void blur() {
   }
 }
 
-void player_move() {
+bool player_move() {
   if(IsMouseButtonPressed(MOUSE_LEFT_BUTTON)) {
     Vector2 mousePos = GetMousePosition();
     int col = (int)mousePos.x / CELL_SIZE;
     int row = (int)mousePos.y / CELL_SIZE;
-    if(InFilledRegion(row, col)) return;
+    if(InFilledRegion(row, col)) return false;
     board[player->origin][player->origin] = board[row][col];
     fill_region(board[row][col]);
-    switch_player();
     blur();
+    return true;
   }
+  return false;
 }
 
 
 void GameLoop() {
-  const char* winTxt = "VICTORY!";
-  const char* lossTxt = "GAME OVER!";
-  const char* resetTxt = "Press [R] to Play Again";
+  const char* winTxt;
   int fontSize = 80;
-  int textWidth1 = MeasureText(winTxt, fontSize);
-  int textWidth2 = MeasureText(lossTxt, fontSize);
-  int textWidth3 = MeasureText(resetTxt, 25);
 
-  Player *player = &p1;
+  player = &p1;
   init_board();
 
   while(!WindowShouldClose()) {
     if(state == PLAYING) {
-      player_move();
-      if(count_cells() >= (((CELLS * CELLS) / 2) - 16)) {
-        state = WIN;
-      }
-    }
-    else {
-      if(IsKeyPressed(KEY_R)) {
-        init_board();
-        state = PLAYING;
+      if (player_move()) {
+        if(count_cells() >= (((CELLS * CELLS) / 2) - 16)) {
+          state = END;
+        } else {
+          switch_player();
+        }
       }
     }
 
     BeginDrawing();
     ClearBackground(BLACK);
 
-    switch (state) {
-      case PLAYING:
-        display_board();
-        break;
-      case WIN:
-        ClearBackground(BLACK);
-        DrawText(winTxt, WIDTH/2 - textWidth1/2, HEIGHT/2 - fontSize/2, fontSize, GREEN);
-        DrawText(TextFormat("%d",player->id), WIDTH/2 - textWidth1/2, HEIGHT/2 - fontSize/2, fontSize, GREEN);
-        DrawText(resetTxt, WIDTH/2 - textWidth3/2, HEIGHT/2 + 50, 25, RAYWHITE);
-        break;
-      case LOSS:
-        ClearBackground(BLACK);
-        DrawText(lossTxt, WIDTH/2 - textWidth2/2, HEIGHT/2 - fontSize/2, fontSize, RED);
-        DrawText(resetTxt, WIDTH/2 - textWidth3/2, HEIGHT/2 + 50, 25, RAYWHITE);
-        break;
-      default:
-        break;
+    if(state == PLAYING) {
+      display_board();
+    }
+    else {
+      ClearBackground(BLACK);
+      winTxt = TextFormat("Player %d WINS!", player->id == -1 ? 1 : 2);
+      int textWidth = MeasureText(winTxt, fontSize);
+
+      DrawText(winTxt, WIDTH/2 - textWidth/2, HEIGHT/2 - fontSize/2, fontSize, GREEN);
     }
     EndDrawing();
   }
 }
 
 int main() {
-  InitWindow(WIDTH, HEIGHT, "Jork");
+  InitWindow(WIDTH, HEIGHT, "Flood War");
   SetTargetFPS(45);
   GameLoop();
   CloseWindow();
